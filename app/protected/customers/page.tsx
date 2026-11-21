@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Plus,
 } from "lucide-react";
+export const instant = false;
 
 type Customer = {
   id: string;
