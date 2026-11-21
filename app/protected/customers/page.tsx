@@ -1,226 +1,293 @@
 
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import {
-  Users,
-  UserRound,
-  CalendarDays,
-  Phone,
-  Mail,
-  ClipboardList,
-  Plus,
-} from "lucide-react";
-export const instant = false;
+import { createClient } from "@/utils/supabase/client";
 
 type Customer = {
   id: string;
-  bride_name: string | null;
-  groom_name: string | null;
+  full_name: string;
   phone: string | null;
   email: string | null;
-  wedding_date: string | null;
-  status: string;
-  source: string | null;
-  created_at: string;
 };
 
-const statusConfig: Record<string, { label: string; className: string }> = {
-  new: { label: "Khách mới", className: "bg-blue-50 text-blue-700" },
-  consulting: { label: "Đang tư vấn", className: "bg-amber-50 text-amber-700" },
-  booked: { label: "Đã đặt dịch vụ", className: "bg-emerald-50 text-emerald-700" },
-  completed: { label: "Hoàn thành", className: "bg-gray-100 text-gray-700" },
-  cancelled: { label: "Đã hủy", className: "bg-red-50 text-red-700" },
-};
+export default function CustomersPage() {
+  const supabase = useMemo(() => createClient(), []);
 
-function formatDate(date: string | null) {
-  if (!date) return "Chưa xác định";
-  return new Date(`${date}T00:00:00`).toLocaleDateString("vi-VN");
-}
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
-function getCustomerName(customer: Customer) {
-  return [customer.bride_name, customer.groom_name]
-    .filter(Boolean)
-    .join(" & ") || "Khách hàng chưa có tên";
-}
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
 
-export default async function CustomersPage() {
-  const supabase = await createClient();
+  const loadCustomers = useCallback(async () => {
+    setLoading(true);
+    setError("");
 
-  const { data, error } = await supabase
-    .from("customers")
-    .select(
-      "id, bride_name, groom_name, phone, email, wedding_date, status, source, created_at"
-    )
-    .order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id, full_name, phone, email")
+      .order("full_name", { ascending: true });
 
-  const customers = (data ?? []) as Customer[];
+    if (error) {
+      setError(error.message);
+      setCustomers([]);
+    } else {
+      setCustomers((data ?? []) as Customer[]);
+    }
 
-  const totalCustomers = customers.length;
-  const newCustomers = customers.filter((c) => c.status === "new").length;
-  const consultingCustomers = customers.filter((c) => c.status === "consulting").length;
-  const bookedCustomers = customers.filter((c) => c.status === "booked").length;
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    void loadCustomers();
+  }, [loadCustomers]);
+
+  const filteredCustomers = customers.filter((customer) => {
+    const keyword = search.toLowerCase().trim();
+
+    return (
+      customer.full_name.toLowerCase().includes(keyword) ||
+      (customer.phone ?? "").toLowerCase().includes(keyword) ||
+      (customer.email ?? "").toLowerCase().includes(keyword)
+    );
+  });
+
+  function startEditing(customer: Customer) {
+    setEditingId(customer.id);
+    setEditName(customer.full_name);
+    setEditPhone(customer.phone ?? "");
+    setEditEmail(customer.email ?? "");
+  }
+
+  async function saveCustomer() {
+    if (!editingId || !editName.trim()) {
+      setError("Vui lòng nhập họ tên khách hàng.");
+      return;
+    }
+
+    setError("");
+
+    const { error } = await supabase
+      .from("customers")
+      .update({
+        full_name: editName.trim(),
+        phone: editPhone.trim() || null,
+        email: editEmail.trim() || null,
+      })
+      .eq("id", editingId);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    setEditingId(null);
+    await loadCustomers();
+  }
+
+  async function deleteCustomer(id: string) {
+    const confirmed = window.confirm(
+      "Bạn có chắc chắn muốn xóa khách hàng này không?"
+    );
+
+    if (!confirmed) return;
+
+    setError("");
+
+    const { error } = await supabase
+      .from("customers")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    await loadCustomers();
+  }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.25em] text-[#a58b65]">
-            MONJI WEDDING BOOK
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#292722]">
-            Khách hàng
-          </h1>
-          <p className="mt-2 text-sm text-gray-500">
-            Quản lý thông tin cô dâu, chú rể và lịch sử tư vấn.
-          </p>
-        </div>
+    <main className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <div className="mx-auto max-w-7xl">
 
-        <Link
-          href="/protected/customers/new"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#292722] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#a58b65]"
-        >
-          <Plus size={17} />
-          Thêm khách hàng
-        </Link>
-      </div>
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Không thể tải danh sách khách hàng: {error.message}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Tổng khách hàng" value={totalCustomers} icon={<Users size={20} />} />
-        <StatCard title="Khách hàng mới" value={newCustomers} icon={<UserRound size={20} />} />
-        <StatCard title="Đang tư vấn" value={consultingCustomers} icon={<ClipboardList size={20} />} />
-        <StatCard title="Đã đặt dịch vụ" value={bookedCustomers} icon={<CalendarDays size={20} />} />
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-[#e9e4dc] bg-white">
-        <div className="flex flex-col gap-2 border-b border-[#eeeae3] px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <h2 className="font-semibold text-[#292722]">Danh sách khách hàng</h2>
-            <p className="mt-1 text-xs text-gray-500">
-              Dữ liệu được đồng bộ từ Supabase.
+            <p className="text-sm font-medium uppercase tracking-widest text-amber-700">
+              MONJI STUDIO
+            </p>
+            <h1 className="mt-2 text-3xl font-bold text-gray-900">
+              Quản lý khách hàng
+            </h1>
+            <p className="mt-2 text-sm text-gray-500">
+              Quản lý và theo dõi thông tin khách hàng của MONJI.
             </p>
           </div>
-          <span className="text-sm text-gray-500">
-            {totalCustomers} khách hàng
-          </span>
+
+          <Link
+            href="/protected/customers/new"
+            className="rounded-xl bg-gray-900 px-5 py-3 text-center font-medium text-white hover:bg-gray-700"
+          >
+            + Thêm khách hàng
+          </Link>
         </div>
 
-        {customers.length === 0 ? (
-          <div className="flex flex-col items-center px-6 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#f6f3ed] text-[#a58b65]">
-              <Users size={25} />
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border bg-white p-6 shadow-sm">
+            <p className="text-sm text-gray-500">Tổng khách hàng</p>
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {customers.length}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border bg-white p-6 shadow-sm">
+            <p className="text-sm text-gray-500">Kết quả tìm kiếm</p>
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {filteredCustomers.length}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+
+          <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Danh sách khách hàng
+            </h2>
+
+            <input
+              type="text"
+              placeholder="Tìm tên, số điện thoại hoặc email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-amber-600 sm:max-w-sm"
+            />
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+              {error}
             </div>
-            <h3 className="mt-4 font-medium text-[#292722]">Chưa có khách hàng</h3>
-            <p className="mt-2 max-w-sm text-sm text-gray-500">
-              Danh sách khách hàng đang trống. Hãy tạo hồ sơ khách hàng đầu tiên.
-            </p>
-            <Link
-              href="/protected/customers/new"
-              className="mt-5 rounded-xl bg-[#292722] px-5 py-3 text-sm font-medium text-white hover:bg-[#a58b65]"
-            >
-              Thêm khách hàng đầu tiên
-            </Link>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left text-sm">
-              <thead className="bg-[#faf9f6] text-xs uppercase tracking-wider text-gray-500">
-                <tr>
-                  <th className="px-5 py-4 font-medium">Khách hàng</th>
-                  <th className="px-5 py-4 font-medium">Liên hệ</th>
-                  <th className="px-5 py-4 font-medium">Ngày cưới</th>
-                  <th className="px-5 py-4 font-medium">Nguồn</th>
-                  <th className="px-5 py-4 font-medium">Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#eeeae3]">
-                {customers.map((customer) => {
-                  const status = statusConfig[customer.status] ?? {
-                    label: customer.status,
-                    className: "bg-gray-100 text-gray-700",
-                  };
+          )}
 
-                  return (
-                    <tr key={customer.id} className="transition-colors hover:bg-[#fcfbf9]">
-                      <td className="px-5 py-4">
-                        <p className="font-medium text-[#292722]">
-                          {getCustomerName(customer)}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-400">
-                          Mã: {customer.id.slice(0, 8)}
-                        </p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="space-y-1">
-                          {customer.phone && (
-                            <p className="flex items-center gap-2 text-gray-600">
-                              <Phone size={13} />
-                              {customer.phone}
-                            </p>
-                          )}
-                          {customer.email && (
-                            <p className="flex items-center gap-2 text-gray-500">
-                              <Mail size={13} />
-                              {customer.email}
-                            </p>
-                          )}
-                          {!customer.phone && !customer.email && (
-                            <span className="text-gray-400">Chưa có thông tin</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-gray-600">
-                        {formatDate(customer.wedding_date)}
-                      </td>
-                      <td className="px-5 py-4 text-gray-600">
-                        {customer.source || "—"}
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${status.className}`}>
-                          {status.label}
-                        </span>
-                      </td>
+          {loading ? (
+            <div className="py-12 text-center text-gray-500">
+              Đang tải dữ liệu khách hàng...
+            </div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="font-medium text-gray-700">
+                Chưa tìm thấy khách hàng
+              </p>
+              <p className="mt-2 text-sm text-gray-500">
+                Hãy thêm khách hàng mới hoặc thử từ khóa khác.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50 text-gray-500">
+                    <th className="px-4 py-4">Họ và tên</th>
+                    <th className="px-4 py-4">Số điện thoại</th>
+                    <th className="px-4 py-4">Email</th>
+                    <th className="px-4 py-4 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredCustomers.map((customer) => (
+                    <tr
+                      key={customer.id}
+                      className="border-b last:border-0 hover:bg-gray-50"
+                    >
+                      {editingId === customer.id ? (
+                        <>
+                          <td className="px-4 py-3">
+                            <input
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              className="w-full rounded-lg border px-3 py-2"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <input
+                              value={editPhone}
+                              onChange={(e) => setEditPhone(e.target.value)}
+                              className="w-full rounded-lg border px-3 py-2"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <input
+                              value={editEmail}
+                              onChange={(e) => setEditEmail(e.target.value)}
+                              className="w-full rounded-lg border px-3 py-2"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={saveCustomer}
+                              className="mr-3 font-medium text-green-700"
+                            >
+                              Lưu
+                            </button>
+
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="text-gray-500"
+                            >
+                              Hủy
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-4 font-medium text-gray-900">
+                            {customer.full_name}
+                          </td>
+
+                          <td className="px-4 py-4 text-gray-600">
+                            {customer.phone || "Chưa có"}
+                          </td>
+
+                          <td className="px-4 py-4 text-gray-600">
+                            {customer.email || "Chưa có"}
+                          </td>
+
+                          <td className="px-4 py-4 text-right">
+                            <button
+                              onClick={() => startEditing(customer)}
+                              className="mr-4 font-medium text-blue-700 hover:underline"
+                            >
+                              Sửa
+                            </button>
+
+                            <button
+                              onClick={() => deleteCustomer(customer.id)}
+                              className="font-medium text-red-600 hover:underline"
+                            >
+                              Xóa
+                            </button>
+                          </td>
+                        </>
+                      )}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <p className="text-center text-xs text-gray-400">
-        MONJI WEDDING BOOK · CUSTOMER MANAGEMENT
-      </p>
-    </div>
-  );
-}
-
-function StatCard({
-  title,
-  value,
-  icon,
-}: {
-  title: string;
-  value: number;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-[#e9e4dc] bg-white p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{title}</p>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f6f3ed] text-[#a58b65]">
-          {icon}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
-      <p className="mt-4 text-3xl font-semibold tracking-tight text-[#292722]">
-        {value}
-      </p>
-    </div>
+    </main>
   );
 }
