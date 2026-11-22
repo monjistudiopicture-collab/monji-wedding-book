@@ -82,8 +82,10 @@ export default function WeddingForm({ token }: WeddingFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [validating, setValidating] = useState(Boolean(token));
+const [isEditing, setIsEditing] = useState(false);
+const [validating, setValidating] = useState(Boolean(token));
 const [validLink, setValidLink] = useState(!token);
+
 
 useEffect(() => {
   if (!token) return;
@@ -111,12 +113,44 @@ useEffect(() => {
         return;
       }
 
-      setForm((previous) => ({
-        ...previous,
-        brideName: result.customer.brideName || "",
-        groomName: result.customer.groomName || "",
-        weddingDate: result.customer.weddingDate || previous.weddingDate,
-      }));
+      if (result.mode === "edit" && result.booking) {
+        const booking = result.booking;
+
+        setForm({
+          weddingType: booking.weddingType || "Cưới",
+          weddingDate: booking.weddingDate || "",
+          brideName: booking.brideName || "",
+          groomName: booking.groomName || "",
+          bridePhone: booking.bridePhone || "",
+          groomPhone: booking.groomPhone || "",
+          brideAddress: booking.brideAddress || "",
+          brideMakeupStart: booking.brideMakeupStart || "",
+          groomArrivalBride: booking.groomArrivalBride || "",
+          groomAddress: booking.groomAddress || "",
+          groomDeparture: booking.groomDeparture || "",
+          brideDepartureToGroom: booking.brideDepartureToGroom || "",
+          restaurantAddress: booking.restaurantAddress || "",
+          restaurantName: booking.restaurantName || "",
+          restaurantGuestArrival: booking.restaurantGuestArrival || "",
+          restaurantBanquetTime: booking.restaurantBanquetTime || "",
+          extraNotes: booking.extraNotes || "",
+        });
+
+        setIsEditing(true);
+      } else if (result.mode === "create" && result.customer) {
+        setForm((previous) => ({
+          ...previous,
+          brideName: result.customer.brideName || "",
+          groomName: result.customer.groomName || "",
+          weddingDate: result.customer.weddingDate || previous.weddingDate,
+        }));
+
+        setIsEditing(false);
+      } else {
+        setError("Không thể tải dữ liệu biểu mẫu.");
+        setValidLink(false);
+        return;
+      }
 
       setValidLink(true);
     } catch {
@@ -137,6 +171,7 @@ useEffect(() => {
     cancelled = true;
   };
 }, [token]);
+
   const makeupFinish = subtractMinutes(form.groomArrivalBride, 90);
   const brideTeamArrival = subtractMinutes(makeupFinish, 15);
   const groomTeamArrival = subtractMinutes(form.groomDeparture, 90);
@@ -205,21 +240,34 @@ async function handleSubmit(event: FormEvent<HTMLFormElement>) {
       extra_notes: form.extraNotes.trim() || null,
     };
 
-    if (token) {
-      const response = await fetch("/api/booking-links/submit", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ token, payload }),
-      });
+    
+if (token) {
+  const endpoint = isEditing
+    ? "/api/booking-links/update"
+    : "/api/booking-links/submit";
 
-      const result = await response.json();
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ token, payload }),
+  });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Không thể gửi biểu mẫu.");
-      }
-    } else {
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    throw new Error(
+      result.error || "Không thể lưu thông tin booking."
+    );
+  }
+
+  // Sau lần gửi đầu tiên, các lần tiếp theo sẽ cập nhật booking cũ.
+  if (!isEditing) {
+    setIsEditing(true);
+  }
+} else {
+
       const { error: insertError } = await supabase
         .from("wedding_bookings")
         .insert(payload);
@@ -282,42 +330,49 @@ if (token && !validLink) {
     </main>
   );
 }
-  if (success) {
-    return (
-      <main className="min-h-screen bg-[#f8f6f1] px-4 py-16">
-        <div className="mx-auto max-w-xl rounded-3xl border border-stone-200 bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-3xl text-green-700">
-            ✓
-          </div>
+ 
+if (success) {
+  return (
+    <main className="min-h-screen bg-[#f8f6f1] px-4 py-16">
+      <div className="mx-auto max-w-xl rounded-3xl border border-stone-200 bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-3xl text-green-700">
+          ✓
+        </div>
 
-          <p className="mt-6 text-xs font-semibold tracking-[0.3em] text-amber-800">
-            MONJI STUDIO
-          </p>
+        <p className="mt-6 text-xs font-semibold tracking-[0.3em] text-amber-800">
+          MONJI STUDIO
+        </p>
 
-          <h1 className="mt-3 text-2xl font-semibold text-stone-900">
-            Gửi thông tin thành công!
-          </h1>
+        <h1 className="mt-3 text-2xl font-semibold text-stone-900">
+          {isEditing
+            ? "Lưu thông tin thành công!"
+            : "Gửi thông tin thành công!"}
+        </h1>
 
-          <p className="mt-4 leading-7 text-stone-600">
-            Cảm ơn bạn đã gửi thông tin ngày cưới. MONJI đã nhận được biểu mẫu
-            và sẽ liên hệ để xác nhận các thông tin cần thiết.
-          </p>
+        <p className="mt-4 leading-7 text-stone-600">
+          {token
+            ? "MONJI đã nhận được thông tin ngày cưới của hai bạn. Bạn có thể sử dụng link này để xem và chỉnh sửa thông tin khi cần."
+            : "Cảm ơn bạn đã gửi thông tin ngày cưới. MONJI đã nhận được biểu mẫu và sẽ liên hệ để xác nhận các thông tin cần thiết."}
+        </p>
 
-          <button
-            type="button"
-            onClick={() => {
+        <button
+          type="button"
+          onClick={() => {
+            if (token) {
+              setSuccess(false);
+            } else {
               setForm(initialForm);
               setSuccess(false);
-            }}
-            className="mt-8 rounded-xl bg-stone-900 px-6 py-3 text-sm font-medium text-white hover:bg-stone-700"
-          >
-            Gửi biểu mẫu khác
-          </button>
-        </div>
-      </main>
+            }
+          }}
+          className="mt-8 rounded-xl bg-stone-900 px-6 py-3 text-sm font-medium text-white hover:bg-stone-700"
+        >
+          {token ? "QUAY LẠI BIỂU MẪU" : "GỬI BIỂU MẪU KHÁC"}
+        </button>
+      </div>
+    </main>
     );
   }
-
   return (
     <main className="min-h-screen bg-[#f8f6f1] px-4 py-10 md:py-16">
       <div className="mx-auto max-w-3xl">
@@ -673,7 +728,13 @@ if (token && !validLink) {
               disabled={loading}
               className="mt-6 w-full rounded-xl bg-stone-900 px-6 py-4 text-sm font-semibold tracking-wide text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-64"
             >
-              {loading ? "ĐANG GỬI THÔNG TIN..." : "GỬI THÔNG TIN NGÀY CƯỚI"}
+             {loading
+  ? isEditing
+    ? "ĐANG CẬP NHẬT..."
+    : "ĐANG GỬI THÔNG TIN..."
+  : isEditing
+    ? "CẬP NHẬT THÔNG TIN NGÀY CƯỚI"
+    : "GỬI THÔNG TIN NGÀY CƯỚI"}
             </button>
 
             <p className="mt-5 text-xs tracking-widest text-stone-400">
