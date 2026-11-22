@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { createClient } from "@/utils/supabase/client";
 
 type FormData = {
@@ -76,7 +76,7 @@ type WeddingFormProps = {
 };
 
 export default function WeddingForm({ token }: WeddingFormProps) {
-  const supabase = useMemo(() => createClient(), []);
+  
 
   const [form, setForm] = useState<FormData>(initialForm);
   const [loading, setLoading] = useState(false);
@@ -267,6 +267,7 @@ if (token) {
     setIsEditing(true);
   }
 } else {
+      const supabase = createClient();
 
       const { error: insertError } = await supabase
         .from("wedding_bookings")
