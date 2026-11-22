@@ -1,9 +1,19 @@
-
+﻿
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
+type BookingFormLink = {
+  id: string;
+  customer_id: string;
+  booking_id: string | null;
+  status: "created" | "sent" | "completed" | "expired" | "revoked";
+  sent_at: string | null;
+  completed_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+};
 
 type Customer = {
   id: string;
@@ -16,9 +26,10 @@ type Customer = {
 };
 
 export default function CustomersPage() {
-  const supabase = useMemo(() => createClient(), []);
+  
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [bookingLinks, setBookingLinks] = useState<BookingFormLink[]>([]);
     async function createBookingLink(customerId: string) {
     setCreatingCustomerId(customerId);
     setError("");
@@ -46,7 +57,7 @@ export default function CustomersPage() {
       setCustomerLinks((previous) => ({
         ...previous,
         [customerId]: result.link,
-      }));
+      })); await loadBookingLinks();
 
       setLinkMessage("Đã tạo link thành công. Bạn có thể sao chép để gửi khách hàng.");
     } catch (err) {
@@ -71,6 +82,51 @@ export default function CustomersPage() {
     }
   }
   const [loading, setLoading] = useState(true);
+    async function updateBookingLinkStatus(
+    linkId: string,
+    action: "sent" | "revoked"
+  ) {
+    if (action === "revoked") {
+      const confirmed = window.confirm(
+        "Bạn có chắc chắn muốn thu hồi link này? Khách hàng sẽ không thể sử dụng link nữa."
+      );
+
+      if (!confirmed) return;
+    }
+
+    setError("");
+    setLinkMessage("");
+
+    try {
+      const response = await fetch(`/api/booking-links/${linkId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Không thể cập nhật trạng thái link.");
+      }
+
+      await loadBookingLinks();
+
+      setLinkMessage(
+        action === "sent"
+          ? "Đã đánh dấu link là đã gửi."
+          : "Đã thu hồi link thành công."
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Đã xảy ra lỗi khi cập nhật link."
+      );
+    }
+  }
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
 const [creatingCustomerId, setCreatingCustomerId] = useState<string | null>(null);
@@ -84,6 +140,7 @@ const [linkMessage, setLinkMessage] = useState("");
   const [editWeddingDate, setEditWeddingDate] = useState("");
 
   const loadCustomers = useCallback(async () => {
+        const supabase = createClient();
     setLoading(true);
     setError("");
 
@@ -102,11 +159,28 @@ const [linkMessage, setLinkMessage] = useState("");
     }
 
     setLoading(false);
-  }, [supabase]);
+  }, []);
+const loadBookingLinks = useCallback(async () => {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("booking_form_links")
+    .select(
+      "id, customer_id, booking_id, status, sent_at, completed_at, expires_at, created_at"
+    )
+    .order("created_at", { ascending: false });
 
+  if (error) {
+    setError(error.message);
+    setBookingLinks([]);
+    return;
+  }
+
+  setBookingLinks((data ?? []) as BookingFormLink[]);
+}, []);
   useEffect(() => {
-    void loadCustomers();
-  }, [loadCustomers]);
+  void loadCustomers();
+  void loadBookingLinks();
+}, [loadCustomers, loadBookingLinks]);
 
   const keyword = search.trim().toLowerCase();
 
@@ -129,6 +203,7 @@ const [linkMessage, setLinkMessage] = useState("");
   }
 
   async function saveCustomer() {
+        const supabase = createClient();
     if (!editingId) return;
 
     if (!editBrideName.trim() || !editGroomName.trim()) {
@@ -160,6 +235,7 @@ const [linkMessage, setLinkMessage] = useState("");
   }
 
   async function deleteCustomer(id: string) {
+        const supabase = createClient();
     const confirmed = window.confirm(
       "Bạn có chắc chắn muốn xóa hồ sơ khách hàng này không?"
     );
@@ -182,7 +258,11 @@ const [linkMessage, setLinkMessage] = useState("");
       return;
     }
 
-    await loadCustomers();
+        await loadCustomers();
+  }
+
+  function getCustomerBookingLink(customerId: string) {
+    return bookingLinks.find((link) => link.customer_id === customerId);
   }
 
   return (
@@ -255,6 +335,7 @@ const [linkMessage, setLinkMessage] = useState("");
               <p className="font-medium text-gray-700">
                 Chưa tìm thấy khách hàng
               </p>
+              
               <p className="mt-2 text-sm text-gray-500">
                 Hãy thêm khách hàng mới hoặc thử từ khóa khác.
               </p>
@@ -381,7 +462,74 @@ const [linkMessage, setLinkMessage] = useState("");
                               {customer.status}
                             </span>
                           </td>
+<td className="px-4 py-4">
+  {(() => {
+    const link = getCustomerBookingLink(customer.id);
+    const currentUrl = customerLinks[customer.id];
+    const canCreateNew =
+      !link ||
+      ["completed", "expired", "revoked"].includes(link.status);
 
+    if (canCreateNew) {
+      return (
+        <button
+          onClick={() => createBookingLink(customer.id)}
+          disabled={creatingCustomerId === customer.id}
+          className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+        >
+          {creatingCustomerId === customer.id
+            ? "Đang tạo..."
+            : "Tạo link"}
+        </button>
+      );
+    }
+
+    return (
+      <div className="min-w-48 space-y-2">
+        <p className="text-xs font-medium text-gray-700">
+          {link.status === "created"
+            ? "Đã tạo"
+            : link.status === "sent"
+              ? "Đã gửi"
+              : "Không xác định"}
+        </p>
+
+        {currentUrl ? (
+          <button
+            onClick={() => copyBookingLink(customer.id)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-xs hover:bg-gray-50"
+          >
+            Sao chép link
+          </button>
+        ) : (
+          <p className="text-xs text-gray-500">
+            Link đã tạo trước đó. URL không được lưu để bảo mật.
+          </p>
+        )}
+
+        {link.status === "created" && (
+          <button
+            onClick={() =>
+              updateBookingLinkStatus(link.id, "sent")
+            }
+            className="block text-xs font-medium text-blue-700 hover:underline"
+          >
+            Đánh dấu đã gửi
+          </button>
+        )}
+
+        <button
+          onClick={() =>
+            updateBookingLinkStatus(link.id, "revoked")
+          }
+          className="block text-xs font-medium text-red-600 hover:underline"
+        >
+          Thu hồi link
+        </button>
+      </div>
+    );
+  })()}
+</td>
                           <td className="px-4 py-4 text-right">
                             <button
                               onClick={() => startEditing(customer)}
