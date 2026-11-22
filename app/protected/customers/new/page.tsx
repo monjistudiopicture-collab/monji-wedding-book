@@ -1,14 +1,14 @@
 
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 
 export default function NewCustomerPage() {
   const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
+
 
   const [brideName, setBrideName] = useState("");
   const [groomName, setGroomName] = useState("");
@@ -28,8 +28,10 @@ export default function NewCustomerPage() {
       return;
     }
 
-    setLoading(true);
+        setLoading(true);
     setError("");
+
+    const supabase = createClient();
 
     const {
       data: { user },
