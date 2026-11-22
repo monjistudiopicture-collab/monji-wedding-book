@@ -1,17 +1,19 @@
-﻿import type { MetadataRoute } from "next";
+﻿
+import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    id: "/",
+    id: "/protected/customers",
     name: "MONJI WEDDING BOOK",
     short_name: "MONJI BOOK",
-    description: "Ứng dụng quản lý lịch cưới và khách hàng MONJI Studio",
-    start_url: "/protected",
+    description:
+      "Hệ thống quản lý booking cưới và khách hàng MONJI Studio.",
+    start_url: "/protected/customers",
     scope: "/",
     display: "standalone",
-    background_color: "#F8F5F0",
+    background_color: "#F3EDE3",
     theme_color: "#F3EDE3",
-    orientation: "portrait-primary",
+    orientation: "portrait",
     categories: ["business", "productivity"],
     icons: [
       {

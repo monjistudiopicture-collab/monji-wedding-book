@@ -7,23 +7,81 @@ import { createClient } from "@/utils/supabase/client";
 
 type Customer = {
   id: string;
-  full_name: string;
+  bride_name: string | null;
+  groom_name: string | null;
   phone: string | null;
   email: string | null;
+  wedding_date: string | null;
+  status: string;
 };
 
 export default function CustomersPage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+    async function createBookingLink(customerId: string) {
+    setCreatingCustomerId(customerId);
+    setError("");
+    setLinkMessage("");
+
+    try {
+      const response = await fetch("/api/booking-links", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ customerId }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Không thể tạo link.");
+      }
+
+      if (!result.link || typeof result.link !== "string") {
+        throw new Error("Máy chủ không trả về link hợp lệ.");
+      }
+
+      setCustomerLinks((previous) => ({
+        ...previous,
+        [customerId]: result.link,
+      }));
+
+      setLinkMessage("Đã tạo link thành công. Bạn có thể sao chép để gửi khách hàng.");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Đã xảy ra lỗi khi tạo link."
+      );
+    } finally {
+      setCreatingCustomerId(null);
+    }
+  }
+
+  async function copyBookingLink(customerId: string) {
+    const link = customerLinks[customerId];
+
+    if (!link) return;
+
+    try {
+      await navigator.clipboard.writeText(link);
+      setLinkMessage("Đã sao chép link. Bạn có thể gửi cho khách hàng.");
+    } catch {
+      setError("Không thể tự động sao chép. Vui lòng chọn và sao chép link thủ công.");
+    }
+  }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-
+const [creatingCustomerId, setCreatingCustomerId] = useState<string | null>(null);
+const [customerLinks, setCustomerLinks] = useState<Record<string, string>>({});
+const [linkMessage, setLinkMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
+  const [editBrideName, setEditBrideName] = useState("");
+  const [editGroomName, setEditGroomName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editWeddingDate, setEditWeddingDate] = useState("");
 
   const loadCustomers = useCallback(async () => {
     setLoading(true);
@@ -31,8 +89,10 @@ export default function CustomersPage() {
 
     const { data, error } = await supabase
       .from("customers")
-      .select("id, full_name, phone, email")
-      .order("full_name", { ascending: true });
+      .select(
+        "id, bride_name, groom_name, phone, email, wedding_date, status"
+      )
+      .order("created_at", { ascending: false });
 
     if (error) {
       setError(error.message);
@@ -48,26 +108,31 @@ export default function CustomersPage() {
     void loadCustomers();
   }, [loadCustomers]);
 
-  const filteredCustomers = customers.filter((customer) => {
-    const keyword = search.toLowerCase().trim();
+  const keyword = search.trim().toLowerCase();
 
-    return (
-      customer.full_name.toLowerCase().includes(keyword) ||
-      (customer.phone ?? "").toLowerCase().includes(keyword) ||
-      (customer.email ?? "").toLowerCase().includes(keyword)
-    );
+  const filteredCustomers = customers.filter((customer) => {
+    return [
+      customer.bride_name,
+      customer.groom_name,
+      customer.phone,
+      customer.email,
+    ].some((value) => (value ?? "").toLowerCase().includes(keyword));
   });
 
   function startEditing(customer: Customer) {
     setEditingId(customer.id);
-    setEditName(customer.full_name);
+    setEditBrideName(customer.bride_name ?? "");
+    setEditGroomName(customer.groom_name ?? "");
     setEditPhone(customer.phone ?? "");
     setEditEmail(customer.email ?? "");
+    setEditWeddingDate(customer.wedding_date ?? "");
   }
 
   async function saveCustomer() {
-    if (!editingId || !editName.trim()) {
-      setError("Vui lòng nhập họ tên khách hàng.");
+    if (!editingId) return;
+
+    if (!editBrideName.trim() || !editGroomName.trim()) {
+      setError("Vui lòng nhập tên cô dâu và chú rể.");
       return;
     }
 
@@ -76,9 +141,12 @@ export default function CustomersPage() {
     const { error } = await supabase
       .from("customers")
       .update({
-        full_name: editName.trim(),
+        bride_name: editBrideName.trim(),
+        groom_name: editGroomName.trim(),
         phone: editPhone.trim() || null,
         email: editEmail.trim() || null,
+        wedding_date: editWeddingDate || null,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", editingId);
 
@@ -93,7 +161,7 @@ export default function CustomersPage() {
 
   async function deleteCustomer(id: string) {
     const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn xóa khách hàng này không?"
+      "Bạn có chắc chắn muốn xóa hồ sơ khách hàng này không?"
     );
 
     if (!confirmed) return;
@@ -106,7 +174,11 @@ export default function CustomersPage() {
       .eq("id", id);
 
     if (error) {
-      setError(error.message);
+      setError(
+        error.message.includes("foreign key")
+          ? "Không thể xóa khách hàng vì hồ sơ này đã có liên kết form. Bạn nên giữ hồ sơ để bảo toàn lịch sử."
+          : error.message
+      );
       return;
     }
 
@@ -116,7 +188,6 @@ export default function CustomersPage() {
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl">
-
         <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <p className="text-sm font-medium uppercase tracking-widest text-amber-700">
@@ -126,7 +197,7 @@ export default function CustomersPage() {
               Quản lý khách hàng
             </h1>
             <p className="mt-2 text-sm text-gray-500">
-              Quản lý và theo dõi thông tin khách hàng của MONJI.
+              Quản lý và theo dõi hồ sơ khách hàng của MONJI.
             </p>
           </div>
 
@@ -155,7 +226,6 @@ export default function CustomersPage() {
         </div>
 
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-
           <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row">
             <h2 className="text-lg font-semibold text-gray-900">
               Danh sách khách hàng
@@ -163,10 +233,10 @@ export default function CustomersPage() {
 
             <input
               type="text"
-              placeholder="Tìm tên, số điện thoại hoặc email..."
+              placeholder="Tìm cô dâu, chú rể, điện thoại hoặc email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-amber-600 sm:max-w-sm"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-amber-600 sm:max-w-md"
             />
           </div>
 
@@ -191,12 +261,16 @@ export default function CustomersPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-left text-sm">
+              <table className="w-full min-w-[1000px] text-left text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 text-gray-500">
-                    <th className="px-4 py-4">Họ và tên</th>
-                    <th className="px-4 py-4">Số điện thoại</th>
+                    <th className="px-4 py-4">Cô dâu</th>
+                    <th className="px-4 py-4">Chú rể</th>
+                    <th className="px-4 py-4">Điện thoại</th>
                     <th className="px-4 py-4">Email</th>
+                    <th className="px-4 py-4">Ngày cưới</th>
+                    <th className="px-4 py-4">Trạng thái</th>
+                    <th className="px-4 py-4">Link biểu mẫu</th>
                     <th className="px-4 py-4 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -211,9 +285,19 @@ export default function CustomersPage() {
                         <>
                           <td className="px-4 py-3">
                             <input
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              className="w-full rounded-lg border px-3 py-2"
+                              value={editBrideName}
+                              onChange={(e) => setEditBrideName(e.target.value)}
+                              className="w-36 rounded-lg border px-3 py-2"
+                              placeholder="Cô dâu"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <input
+                              value={editGroomName}
+                              onChange={(e) => setEditGroomName(e.target.value)}
+                              className="w-36 rounded-lg border px-3 py-2"
+                              placeholder="Chú rể"
                             />
                           </td>
 
@@ -221,7 +305,7 @@ export default function CustomersPage() {
                             <input
                               value={editPhone}
                               onChange={(e) => setEditPhone(e.target.value)}
-                              className="w-full rounded-lg border px-3 py-2"
+                              className="w-32 rounded-lg border px-3 py-2"
                             />
                           </td>
 
@@ -229,10 +313,27 @@ export default function CustomersPage() {
                             <input
                               value={editEmail}
                               onChange={(e) => setEditEmail(e.target.value)}
-                              className="w-full rounded-lg border px-3 py-2"
+                              className="w-40 rounded-lg border px-3 py-2"
                             />
                           </td>
 
+                          <td className="px-4 py-3">
+                            <input
+                              type="date"
+                              value={editWeddingDate}
+                              onChange={(e) =>
+                                setEditWeddingDate(e.target.value)
+                              }
+                              className="rounded-lg border px-2 py-2"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3 text-gray-500">
+                            {customer.status}
+                          </td>
+<td className="px-4 py-3 text-gray-400">
+  Không khả dụng khi chỉnh sửa
+</td>
                           <td className="px-4 py-3 text-right">
                             <button
                               onClick={saveCustomer}
@@ -252,7 +353,11 @@ export default function CustomersPage() {
                       ) : (
                         <>
                           <td className="px-4 py-4 font-medium text-gray-900">
-                            {customer.full_name}
+                            {customer.bride_name || "Chưa có"}
+                          </td>
+
+                          <td className="px-4 py-4 font-medium text-gray-900">
+                            {customer.groom_name || "Chưa có"}
                           </td>
 
                           <td className="px-4 py-4 text-gray-600">
@@ -261,6 +366,20 @@ export default function CustomersPage() {
 
                           <td className="px-4 py-4 text-gray-600">
                             {customer.email || "Chưa có"}
+                          </td>
+
+                          <td className="px-4 py-4 text-gray-600">
+                            {customer.wedding_date
+                              ? new Date(
+                                  `${customer.wedding_date}T00:00:00`
+                                ).toLocaleDateString("vi-VN")
+                              : "Chưa xác định"}
+                          </td>
+
+                          <td className="px-4 py-4">
+                            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
+                              {customer.status}
+                            </span>
                           </td>
 
                           <td className="px-4 py-4 text-right">

@@ -18,8 +18,18 @@ export const metadata: Metadata = {
   description:
     "Hệ thống quản lý booking cưới và khách hàng MONJI Studio.",
   manifest: "/manifest.webmanifest",
-  icons: {
-    icon: "/icon.svg",
+   icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      {
+        url: "/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+    ],
   },
   appleWebApp: {
     capable: true,

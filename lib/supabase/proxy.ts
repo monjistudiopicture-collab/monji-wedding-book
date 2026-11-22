@@ -3,6 +3,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
 
+const ADMIN_USER_ID = "7c0a6a73-47f7-49b8-bd7d-32026bb9320a";
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -37,20 +39,27 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const { data } = await supabase.auth.getClaims();
-  const user = data?.claims;
+  const { data, error } = await supabase.auth.getClaims();
+  const user = error ? null : data?.claims;
 
-  // Chỉ bảo vệ khu vực quản trị /protected
   const isProtectedRoute =
     request.nextUrl.pathname === "/protected" ||
     request.nextUrl.pathname.startsWith("/protected/");
 
-  // Người chưa đăng nhập chỉ bị chuyển hướng khi vào khu vực quản trị
-  if (isProtectedRoute && !user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/auth/login";
-    url.search = "";
-    return NextResponse.redirect(url);
+  if (isProtectedRoute) {
+    if (!user) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/login";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
+    if (user.sub !== ADMIN_USER_ID) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/login";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;
